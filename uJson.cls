@@ -34,7 +34,7 @@
  * String myName = j.val('name');
  *
  */
-public class uJson {
+global class uJson implements Iterator<uJson> {
     protected Map<String, uJson> obj;
     protected Object primitive;
     protected Object[] collection;
@@ -42,6 +42,24 @@ public class uJson {
     protected Boolean isCollection = false;
     protected Boolean isPrimitive = false;
     protected Boolean isObject = false;
+    protected Integer i;
+    
+    public String[] keys {
+        get { 
+            return isObject 
+                ? new List<String>( obj.keySet() )
+                : null;     
+        }
+    }
+    
+    global Boolean hasNext() {
+        return i <= obj.keySet().size();
+    }
+    
+    global uJson next() {
+        return get( keys[i++] );  
+    }
+    
     
     public Object val {
         get{ 
@@ -66,10 +84,15 @@ public class uJson {
      * @return a uJson object 
      */
     public uJson(String value) {
-    	uJson.Tokenizer t = new uJson.Tokenizer(value);
-    	uJson j = t.parse();
-    	isObject = true;
-    	obj = j.obj;
+        if ( value == null ) {
+            obj = new Map<String, uJson>{};
+            return;
+        }
+        
+        uJson.Tokenizer t = new uJson.Tokenizer(value);
+        uJson j = t.parse();
+        isObject = true;
+        obj = j.obj;
     }
     
     /**
@@ -77,8 +100,8 @@ public class uJson {
      * @param value primitive data types (Blob,Boolean,....,String)
      */
     public uJson(Object value) {
-    	isPrimitive = true;
-    	primitive = value;
+        isPrimitive = true;
+        primitive = value;
     }
     
     /**
@@ -100,7 +123,11 @@ public class uJson {
         
         return this;
     }  
-
+    
+    public uJson add(String key) {
+        return put(key, new uJson());
+    }
+    
     /**
      * Retreives the uJson for a key. Used mainly nested objects 
      * or handy for adding elements to an array
@@ -151,8 +178,8 @@ public class uJson {
     }
     
     public uJson put(String key, uJson value) {
-    	obj.put(key, value);
-    	return this;
+        obj.put(key, value);
+        return this;
     }
     /**
      * Converts the object to JSON
@@ -167,8 +194,13 @@ public class uJson {
         // Handle the Collection
         if ( isCollection ) {
             String txt = '[';
-            for ( Object o : collection )
-                txt += uJson.valueToJson(o) + ',';    
+            for ( Object o : collection ) {
+                if ( o instanceof uJson )
+                    txt += ( (uJson) o).toJson() + ',';
+                else
+                    txt += uJson.valueToJson(o) + ','; 
+            } 
+                    
             return txt.substring(0, txt.length()-1) + ']';
         }
         
@@ -177,8 +209,8 @@ public class uJson {
         for ( String key : obj.keySet() )
             txt += '"' + key + '": ' + obj.get(key).toJson() + ', ';
         return txt.length() == 1
-        	? txt + '}'
-        	: txt.substring(0, txt.length()-2) + '}';
+            ? txt + '}'
+            : txt.substring(0, txt.length()-2) + '}';
     }
 
     /**
@@ -200,18 +232,18 @@ public class uJson {
      */
     private static String valueToJson(Object v) {
         if ( v == null )  
-        	return 'null';
+            return 'null';
         if ( v instanceof String ) 
-        	return '"' + v + '"'; 
+            return '"' + v + '"'; 
         if ( v instanceof Boolean  )
             return (Boolean) v ? 'true' : 'false';
         
         return String.valueOf(v);
     }
      
-	/**
-	 * The uJson Exception object
-	 */
+    /**
+     * The uJson Exception object
+     */
     public class TokenizerException extends Exception {}
    
    
@@ -242,7 +274,7 @@ public class uJson {
             return txt.substring(pointer, pointer+1);
         }
 
-		/**
+        /**
          * Handles retrieving an Object from the JSON
          */
         private uJson getObject() { 
@@ -277,12 +309,12 @@ public class uJson {
          *
          * @return the string value
          */  
-        private String getStringValue(Integer start) {	
+        private String getStringValue(Integer start) {  
             for (;;) {
                 pointer = txt.indexOf('"', pointer+1);
                 if ( pointer == -1 )
-                	throw new uJson.TokenizerException('Unexpected end of JSON parsing string value');
-                	
+                    throw new uJson.TokenizerException('Unexpected end of JSON parsing string value');
+                    
                 String prev = txt.substring(pointer-1, pointer);
                 if ( prev != '\\' )
                     break; 
@@ -299,8 +331,8 @@ public class uJson {
         private Object getValue(Integer start) {
             Integer stop = nextCloser();
             if ( stop == null )
-            	throw new uJson.TokenizerException('Unexpected end of JSON while parsing value');
-            	
+                throw new uJson.TokenizerException('Unexpected end of JSON while parsing value');
+                
             String val = txt.substring(start, stop).trim().toLowerCase();
             system.debug('*** Non-String: "' + val + '"');
             if ( val == 'true' ) return true;
@@ -314,47 +346,49 @@ public class uJson {
             return Integer.valueOf(val);
             
         }
-		
-		/**
-		 *
-		 */
-		public uJson parse() {
+        
+        /**
+         *
+         */
+        public uJson parse() {
             if ( next('{') == null )
-            	throw new uJson.TokenizerException('JSON must start with a "{" character');
+                throw new uJson.TokenizerException('JSON must start with a "{" character');
 
 
-	        uJson j = new uJson(); 
-	        for(;;) {
-	        	// Get the key
-	            String key = nextKey();
-	            if ( key == null ) {
-	                System.debug('*** Key not found');
-	                break;
-	            }
-	            
-	            // Get the value
-	            next(':');
-	            Object val = nextValue();
-	            system.debug ('*** Val: ' +  val );
-	            if ( val instanceof Object[] )
-	            	j.put(key, (Object[]) val );
-	            else if (val instanceof uJson )
-	            	j.put(key, (uJson) val);
-	            else
-	            	j.put(key, val);
-	            
-	            // Move to the next key/val pair
-	            if ( next(',') == null ) {
-	                System.debug('*** No more Keys');
-	                break;
-	            }            
-	        }
-			if ( next('}') == null )
-				throw new TokenizerException('JSON must end with a "}" character');
-			
-	        return j;			
-		}
-		
+            uJson j = new uJson(); 
+            for(;;) {
+                // Get the key
+                String key = nextKey();
+                if ( key == null ) {
+                    System.debug('*** Key not found');
+                    break;
+                }
+                
+                // Get the value
+                next(':');
+                Object val = nextValue();
+                system.debug ('*** Val: ' +  val );
+                if ( val == NULL )
+                    j.put(key, val);
+                else if ( val instanceof Object[] )
+                    j.put(key, (Object[]) val );
+                else if (val instanceof uJson )
+                    j.put(key, (uJson) val);
+                else
+                    j.put(key, val);
+                
+                // Move to the next key/val pair
+                if ( next(',') == null ) {
+                    System.debug('*** No more Keys');
+                    break;
+                }            
+            }
+            if ( next('}') == null )
+                throw new TokenizerException('JSON must end with a "}" character');
+            
+            return j;           
+        }
+        
         /**
          * Moves up to the next non-whitespace character (but does not consume it)
          * 
@@ -362,12 +396,12 @@ public class uJson {
          */
         public String next() {
             for (;;) {
-				if ( pointer >= txt.length() )
-               		break;
-               		
+                if ( pointer >= txt.length() )
+                    break;
+                    
                 String c = txt.substring(pointer, pointer+1);
                 if ( c != ' ' && c != '\n' )
-                	return c;
+                    return c;
                
                 pointer++;
             }
@@ -384,16 +418,16 @@ public class uJson {
          */
         public Integer next(String token) {
             for (;;) {
-				if ( pointer >= txt.length() )
-					break;
-				
-				String c = txt.substring(pointer, ++pointer);   
-				if ( token == c )
-					return pointer;
-				if ( c != ' ' && c != '\n' ) {
-					pointer--;
-					return null;
-				}
+                if ( pointer >= txt.length() )
+                    break;
+                
+                String c = txt.substring(pointer, ++pointer);   
+                if ( token == c )
+                    return pointer;
+                if ( c != ' ' && c != '\n' ) {
+                    pointer--;
+                    return null;
+                }
             }
             
             return null;
@@ -404,13 +438,13 @@ public class uJson {
         */
         private Integer nextCloser() {
             for(;;) {
-            	if ( pointer >= txt.length() )
-					break;
-					
-				String c = txt.substring(pointer, ++pointer);   
-				//System.debug('*** Testing: ' + c + ' at ' + (pointer-1));
-				if ( c == ',' || c =='}' || c == ']' )
-					return --pointer;
+                if ( pointer >= txt.length() )
+                    break;
+                    
+                String c = txt.substring(pointer, ++pointer);   
+                //System.debug('*** Testing: ' + c + ' at ' + (pointer-1));
+                if ( c == ',' || c =='}' || c == ']' )
+                    return --pointer;
                
             }
             return null;
@@ -429,8 +463,8 @@ public class uJson {
                 return null;
             Integer stop = txt.indexOf('"', start);
             if ( stop == -1 )
-            	throw new uJson.TokenizerException('Unexpected end of JSON parsing key');
-            	
+                throw new uJson.TokenizerException('Unexpected end of JSON parsing key');
+                
             // Extract the key
             String key = txt.substring(start, stop);
             if (! Pattern.matches('^[0-9a-zA-Z_]*$', key) )
@@ -451,8 +485,8 @@ public class uJson {
         public Object nextValue() {
             String c = next();
             System.debug('*** Starting Char: ' + c + ' at ' + pointer);
-            if ( c == '"' )	 return getStringValue(pointer+1);
-            if ( c == '{' )	 return getObject();
+            if ( c == '"' )  return getStringValue(pointer+1);
+            if ( c == '{' )  return getObject();
             if ( c == '[' )  return getArray();
 
             return getValue(pointer);
@@ -465,122 +499,122 @@ public class uJson {
 //=============================================================================
 // Unit Testing
 //=============================================================================
-	public static testMethod void testJsonCreation() {
-		String e; 
-		
-		uJson j = new uJson()
-			.put('name', 'Ryan')
-			.put('age', 33)
-			.put('married', false)
-			.put('num', new Integer[]{0,1,2})
-			.put('d', 1.2)
-			.put('e', e);
-		
-		String s = '{"d": 1.2, "num": [0,1,2], "e": null, "married": false, "age": 33, "name": "Ryan"}';
-		System.assertEquals(j.toJson(), s);
-	}
-   	
-   	public static testMethod void testParsing() {
-   		String n = '{"ga": true, "gb": "string"}';
-   		String s = '{"a":"Str", "b":true, "c": 10, "d":[0,1,2], "e": null, "f": 1.1, "g":' + n + '}';
-   		uJson j = new uJson(s);	
-   		
-   		// Test Primitives
-   		System.assertEquals( j.val('b'), true  );
-   		System.assertEquals( j.val('a'), 'Str' );
-   		System.assertEquals( j.val('c'), 10	  );
-   		System.assertEquals( j.val('e'), null  );
-   		System.assertEquals( j.val('f'), 1.1	  );
-   		System.assertEquals( j.get('g').val('gb'), 'string'  );
-   		
-   		// Test the list
-   		Object[] l = j.getList('d');
-   		System.assertEquals(3, l.size());
-   		System.assertEquals(0, l[0]);
-   		System.assertEquals(1, l[1]); 
-   		System.assertEquals(2, l[2]); 
-   		
-   		// Test convinience functions
-   		j.get('d').add(5);
-   		System.assertEquals(5, l[3]);
-   		
-   		System.assert( j.get('g').val instanceof Map<String, uJson> );
-   	}
-   	
-   	public static testMethod void testEmpty() {
-   		uJson j = new uJson('{}');
-   		System.assertEquals('{}', j.toJson());
-   		
-   		j = new uJson('{"key": {}}');
-   		System.assertEquals('{"key": {}}', j.toJson());
-   	}
-   	
-   	public static testMethod void testInvalid() {
-   		// Test JSON not starting with { 
-   		try {
-   			uJson j = new uJson('this is not JSON');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('"{" character'));
-   		}
+    public static testMethod void testJsonCreation() {
+        String e; 
+        
+        uJson j = new uJson()
+            .put('name', 'Ryan')
+            .put('age', 33)
+            .put('married', false)
+            .put('num', new Integer[]{0,1,2})
+            .put('d', 1.2)
+            .put('e', e);
+        
+        String s = '{"d": 1.2, "num": [0,1,2], "e": null, "married": false, "age": 33, "name": "Ryan"}';
+        System.assertEquals(j.toJson(), s);
+    }
+    
+    public static testMethod void testParsing() {
+        String n = '{"ga": true, "gb": "string"}';
+        String s = '{"a":"Str", "b":true, "c": 10, "d":[0,1,2], "e": null, "f": 1.1, "g":' + n + '}';
+        uJson j = new uJson(s); 
+        
+        // Test Primitives
+        System.assertEquals( j.val('b'), true  );
+        System.assertEquals( j.val('a'), 'Str' );
+        System.assertEquals( j.val('c'), 10   );
+        System.assertEquals( j.val('e'), null  );
+        System.assertEquals( j.val('f'), 1.1      );
+        System.assertEquals( j.get('g').val('gb'), 'string'  );
+        
+        // Test the list
+        Object[] l = j.getList('d');
+        System.assertEquals(3, l.size());
+        System.assertEquals(0, l[0]);
+        System.assertEquals(1, l[1]); 
+        System.assertEquals(2, l[2]); 
+        
+        // Test convinience functions
+        j.get('d').add(5);
+        System.assertEquals(5, l[3]);
+        
+        System.assert( j.get('g').val instanceof Map<String, uJson> );
+    }
+    
+    public static testMethod void testEmpty() {
+        uJson j = new uJson('{}');
+        System.assertEquals('{}', j.toJson());
+        
+        j = new uJson('{"key": {}}');
+        System.assertEquals('{"key": {}}', j.toJson());
+    }
+    
+    public static testMethod void testInvalid() {
+        // Test JSON not starting with { 
+        try {
+            uJson j = new uJson('this is not JSON');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('"{" character'));
+        }
 
 
-   		// Test JSON not ending with }
-   		try {
-   			uJson j = new uJson('{');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('must end with'));
-   		}	
-   		
-   		
-   		// Test unexcepted end of JSON
-   		try {
-   			uJson j = new uJson('{"test": true');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Unexpected end of JSON'));
-   		}
-   		
-   		
-   		// Test invalid key	
-   		try {
-   			uJson j = new uJson('{"test-": true');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Invalid characters in key') );
-   		}
+        // Test JSON not ending with }
+        try {
+            uJson j = new uJson('{');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('must end with'));
+        }   
+        
+        
+        // Test unexcepted end of JSON
+        try {
+            uJson j = new uJson('{"test": true');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Unexpected end of JSON'));
+        }
+        
+        
+        // Test invalid key 
+        try {
+            uJson j = new uJson('{"test-": true');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Invalid characters in key') );
+        }
 
-   		// Unexpected end of JSON on Key
-   		try {
-   			uJson j = new uJson('{"test');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Unexpected end of JSON') );
-   		}
-   		
-   		// Unexpected end of JSON on String value
-   		try {
-   			uJson j = new uJson('{"test": "true');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Unexpected end of JSON') );
-   		}
-   		
-   		// Unexpected end of JSON on value
-   		try {
-   			uJson j = new uJson('{"a":[0,1');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Unexpected end of JSON') );
-   		}
-   		
-   		// Error processing array
-   		try {
-   			uJson j = new uJson('{"a":[0,1 }');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Invalid JSON while parsing array') );
-   		}
-   		
-   		// Error processing array
-   		try {
-   			uJson j = new uJson('{"a":');
-   		} catch(Exception e) {
-   			System.assert( e.getMessage().contains('Unexpected end of JSON while parsing value') );
-   		}
-   	}
+        // Unexpected end of JSON on Key
+        try {
+            uJson j = new uJson('{"test');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Unexpected end of JSON') );
+        }
+        
+        // Unexpected end of JSON on String value
+        try {
+            uJson j = new uJson('{"test": "true');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Unexpected end of JSON') );
+        }
+        
+        // Unexpected end of JSON on value
+        try {
+            uJson j = new uJson('{"a":[0,1');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Unexpected end of JSON') );
+        }
+        
+        // Error processing array
+        try {
+            uJson j = new uJson('{"a":[0,1 }');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Invalid JSON while parsing array') );
+        }
+        
+        // Error processing array
+        try {
+            uJson j = new uJson('{"a":');
+        } catch(Exception e) {
+            System.assert( e.getMessage().contains('Unexpected end of JSON while parsing value') );
+        }
+    }
   
 }
